@@ -19,10 +19,7 @@ import sys
 
 import mysql.connector
 
-# Konstanty stavů úkolů
-STAV_NEZAHAJENO = "Nezahájeno"
-STAV_PROBIHA = "Probíhá"
-STAV_HOTOVO = "Hotovo"
+from . import config
 
 
 def vytvoreni_databaze() -> bool:
@@ -32,19 +29,20 @@ def vytvoreni_databaze() -> bool:
     Vrací True, pokud databáze existuje nebo byla úspěšně vytvořena,
     jinak False.
     """
-    db_name = "task_manager"
     try:
         # Připojení k MySQL serveru (bez specifikace databáze)
         conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="1111"
+            host=config.DB_HOST,
+            user=config.DB_USER,
+            password=config.DB_PASSWORD
         )
 
         cursor = conn.cursor()
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`")
+        cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS `{config.DB_NAME_APP}`"
+        )
         print(
-            f"Databáze '{db_name}' je připravena "
+            f"Databáze '{config.DB_NAME_APP}' je připravena "
             f"(byla vytvořena, nebo již existuje)."
         )
         cursor.close()
@@ -52,7 +50,7 @@ def vytvoreni_databaze() -> bool:
 
         return True
     except mysql.connector.Error as err:
-        print(f"Chyba při vytváření/ověřování databáze '{db_name}': {err}")
+        print(f"Chyba při vytváření/ověřování databáze '{config.DB_NAME_APP}': {err}")
         return False
 
 
@@ -64,10 +62,10 @@ def pripojeni_db():
     """
     try:
         return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="1111",
-            database="task_manager"
+            host=config.DB_HOST,
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            database=config.DB_NAME_APP
         )
     except mysql.connector.Error as err:
         print(f"Chyba při připojení k databázi: {err}")
@@ -88,8 +86,8 @@ def vytvoreni_tabulky():
     try:
         cursor = db.cursor()
 
-        # Ověření, zda tabulka 'ukoly' již existuje
-        cursor.execute("SHOW TABLES LIKE 'ukoly'")
+        # Ověření, zda tabulka config.TABLE_TASKS již existuje
+        cursor.execute(f"SHOW TABLES LIKE '{config.TABLE_TASKS}'")
         result = cursor.fetchone()
 
         if result:
@@ -98,20 +96,20 @@ def vytvoreni_tabulky():
         else:
             # Tabulka neexistuje, vytvoření nové tabulky
             status_enum_hodnoty = (
-                f"'{STAV_NEZAHAJENO}', '{STAV_PROBIHA}', '{STAV_HOTOVO}'"
+                f"'{config.STAV_NEZAHAJENO}', '{config.STAV_PROBIHA}', '{config.STAV_HOTOVO}'"
             )
 
             print("Tabulka neexistuje, vytvářím ji...")
             cursor.execute(f"""
-                CREATE TABLE ukoly (
+                CREATE TABLE {config.TABLE_TASKS} (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(50) NOT NULL UNIQUE,
-                    description TEXT NOT NULL,
-                    status ENUM({status_enum_hodnoty}),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    název VARCHAR(50) NOT NULL UNIQUE,
+                    popis TEXT NOT NULL,
+                    stav ENUM({status_enum_hodnoty}),
+                    datum_vytvoření TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            print("Tabulka úkolů byla úspěšně vytvořena.")
+            print(f"Tabulka '{config.TABLE_TASKS}' byla úspěšně vytvořena.")
 
     except mysql.connector.Error as err:
         print(f"Chyba operace s tabulkou: {err}")
@@ -165,7 +163,7 @@ def pridat_ukol(db_conn, nazev_ukolu: str, popis_ukolu: str):
 
         # Nejprve kontroluje, zda úkol s tímto názvem již neexistuje
         cursor.execute(
-            "SELECT id FROM ukoly WHERE name = %s", (nazev_ukolu_trimmed,)
+            f"SELECT id FROM {config.TABLE_TASKS} WHERE název = %s", (nazev_ukolu_trimmed,)
         )
         if cursor.fetchone():
             print(
@@ -175,10 +173,10 @@ def pridat_ukol(db_conn, nazev_ukolu: str, popis_ukolu: str):
             return None 
 
         # Pokud neexistuje, provede vložení
-        cursor.execute("""
-            INSERT INTO ukoly (name, description, status)
+        cursor.execute(f"""
+            INSERT INTO {config.TABLE_TASKS} (název, popis, stav)
             VALUES (%s, %s, %s)
-        """, (nazev_ukolu_trimmed, popis_ukolu_trimmed, STAV_NEZAHAJENO))
+        """, (nazev_ukolu_trimmed, popis_ukolu_trimmed, config.STAV_NEZAHAJENO))
         db_conn.commit()
         id_ukolu = cursor.lastrowid
         print(f"Úkol '{nazev_ukolu_trimmed}' byl úspěšně přidán do databáze.")
@@ -216,10 +214,10 @@ def zobrazit_ukoly(db_conn, filtr_stavu: str | None = None):
     try:
         cursor = db_conn.cursor(dictionary=True)
         # Dotaz na základě filtru
-        dotaz = "SELECT * FROM ukoly"
+        dotaz = f"SELECT * FROM {config.TABLE_TASKS}"
         parametry = []
         if filtr_stavu:
-            dotaz += " WHERE status = %s"
+            dotaz += " WHERE stav = %s"
             parametry.append(filtr_stavu)
         dotaz += " ORDER BY id" # Řazení pro konzistentní výstup
 
@@ -238,8 +236,8 @@ def zobrazit_ukoly(db_conn, filtr_stavu: str | None = None):
         print("\nSeznam úkolů:")
         for ukol in ukoly:
             print(
-                f"{ukol['id']}. {ukol['name']} – {ukol['description']} "
-                f"(Stav: {ukol['status']})"
+                f"{ukol['id']}. {ukol['název']} – {ukol['popis']} "
+                f"(Stav: {ukol['stav']})"
             )
 
     except mysql.connector.Error as err:
@@ -264,7 +262,7 @@ def ziskej_ukoly_pro_vyber(db_conn) -> list[dict]:
     cursor = None
     try:
         cursor = db_conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, name, status FROM ukoly ORDER BY id")
+        cursor.execute(f"SELECT id, název, stav FROM {config.TABLE_TASKS} ORDER BY id")
         ukoly = cursor.fetchall()
         return ukoly
     except mysql.connector.Error as err:
@@ -297,8 +295,8 @@ def priprav_a_zobraz_ukoly_pro_vyber(db_conn, cinnost: str) -> list[int]:
     platna_id = []
     for ukol_data in ukoly_k_vyberu:
         print(
-            f"{ukol_data['id']}. {ukol_data['name']} "
-            f"(Aktuální stav: {ukol_data['status']})"
+            f"{ukol_data['id']}. {ukol_data['název']} "
+            f"(Aktuální stav: {ukol_data['stav']})"
         )
         platna_id.append(ukol_data['id'])
     return platna_id
@@ -323,7 +321,7 @@ def aktualizovat_ukol(db_conn, ukol_id: int, novy_stav: str) -> bool:
     cursor = None
     try:
         cursor = db_conn.cursor()
-        aktualizace = "UPDATE ukoly SET status = %s WHERE id = %s"
+        aktualizace = f"UPDATE {config.TABLE_TASKS} SET stav = %s WHERE id = %s"
         cursor.execute(aktualizace, (novy_stav, ukol_id))
         db_conn.commit()
         if cursor.rowcount > 0:
@@ -364,7 +362,7 @@ def odstranit_ukol(db_conn, ukol_id: int) -> bool:
     cursor = None
     try:
         cursor = db_conn.cursor()
-        odstraneni_dotazu = "DELETE FROM ukoly WHERE id = %s"
+        odstraneni_dotazu = f"DELETE FROM {config.TABLE_TASKS} WHERE id = %s"
         cursor.execute(odstraneni_dotazu, (ukol_id,))
         db_conn.commit()
         if cursor.rowcount > 0:
@@ -429,11 +427,13 @@ def ziskej_stav(vyzva: str, povolene_stavy: list[str]) -> str:
         print(f"Neplatný stav. Zadejte jeden z: {', '.join(povolene_stavy)}.")
 
 
-if __name__ == "__main__":
-    vytvoreni_databaze()
-    vytvoreni_tabulky()
-    db_main_conn = pripojeni_db()
+def spustit_aplikaci(db_main_conn):
+    """
+    Spustí hlavní smyčku aplikace pro interakci s uživatelem.
 
+    Args:
+        db_main_conn: Aktivní připojení k databázi.
+    """
     if not db_main_conn:
         print("Nepodařilo se připojit k databázi. Program bude ukončen.")
         sys.exit(1)
@@ -478,11 +478,11 @@ if __name__ == "__main__":
                 while True:
                     print(
                         f"Dostupné filtry stavů: "
-                        f"{STAV_NEZAHAJENO}, {STAV_PROBIHA}"
+                        f"{config.STAV_NEZAHAJENO}, {config.STAV_PROBIHA}"
                     )
                     filtr_zobrazeni = ziskej_stav(
                         "Zadejte stav k vyfiltrování: ",
-                        [STAV_NEZAHAJENO, STAV_PROBIHA]
+                        [config.STAV_NEZAHAJENO, config.STAV_PROBIHA]
                     )
                     break
             zobrazit_ukoly(db_main_conn, filtr_zobrazeni)
@@ -499,8 +499,8 @@ if __name__ == "__main__":
 
                 novy_stav_ukolu = ziskej_stav(
                     f"Zadejte nový stav úkolu "
-                    f"({STAV_PROBIHA} nebo {STAV_HOTOVO}): ",
-                    [STAV_PROBIHA, STAV_HOTOVO]
+                    f"({config.STAV_PROBIHA} nebo {config.STAV_HOTOVO}): ",
+                    [config.STAV_PROBIHA, config.STAV_HOTOVO]
                 )
                 aktualizovat_ukol(
                     db_main_conn, id_pro_aktualizaci, novy_stav_ukolu
@@ -521,6 +521,14 @@ if __name__ == "__main__":
         elif volba_menu == "5":
             print("\nKonec programu.")
             break
+
+
+if __name__ == "__main__":
+    vytvoreni_databaze()
+    vytvoreni_tabulky()
+    db_main_conn = pripojeni_db()
+
+    spustit_aplikaci(db_main_conn)
 
     if db_main_conn and db_main_conn.is_connected():
         db_main_conn.close()

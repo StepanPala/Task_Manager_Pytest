@@ -7,6 +7,7 @@ Používají testovací databázi MySQL.
 import mysql.connector
 import pytest
 
+import src.config as config
 from src.main import aktualizovat_ukol, odstranit_ukol, pridat_ukol
 
 
@@ -17,42 +18,54 @@ def db_conn():
     a nastavení testovací tabulky 'ukoly' v databázi 'task_manager_test'.
     Tabulka se po dokončení testů odstraní.
     """
-    config = {
-        "host": "localhost",
-        "user": "root",
-        "password": "1111",
-        "database":"task_manager_test"
+    db_conn_data = {
+        "host": config.DB_HOST, # Můžeme použít stejné jako pro app
+        "user": config.DB_USER, # nebo definovat specifické TEST_DB_HOST atd.
+        "password": config.DB_PASSWORD,
     }
     conn = None
+    test_cursor = None  # Kurzor, který se poskytne testům
     try:
-        conn = mysql.connector.connect(**config)
-        cursor = conn.cursor()
-        cursor.execute("CREATE DATABASE IF NOT EXISTS task_manager_test")
-        cursor.execute("USE task_manager_test") # Výběr databáze
-        cursor.execute("DROP TABLE IF EXISTS ukoly")
-        cursor.execute("""
-            CREATE TABLE ukoly (
+        conn = mysql.connector.connect(**db_conn_data)
+        setup_cursor = conn.cursor() # Kurzor pro nastavení
+        setup_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {config.TEST_DB_NAME}")
+        setup_cursor.execute(f"USE {config.TEST_DB_NAME}") # Výběr databáze
+        setup_cursor.execute(f"DROP TABLE IF EXISTS {config.TEST_TABLE_TASKS}")
+        # Použití konstant pro stavy v ENUM definici
+        status_enum_values = (
+            f"'{config.STAV_NEZAHAJENO}', '{config.STAV_HOTOVO}', '{config.STAV_PROBIHA}'"
+        )
+        setup_cursor.execute(f"""
+            CREATE TABLE {config.TEST_TABLE_TASKS} (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(50) NOT NULL UNIQUE,
-                description TEXT NOT NULL,
-                status ENUM('Nezahájeno', 'Hotovo', 'Probíhá'),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                název VARCHAR(50) NOT NULL UNIQUE,
+                popis TEXT NOT NULL,
+                stav ENUM({status_enum_values}),
+                datum_vytvoření TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         conn.commit()
-        cursor.close()
+        setup_cursor.close()
 
-        yield conn  # Poskytnutí testovacím funkcím
+        test_cursor = conn.cursor() # Vytvoření kurzoru pro testy
+        yield conn, test_cursor  # Poskytnutí testům
 
     except mysql.connector.Error as err:
         pytest.fail(f"Chyba při připojení k testovací databázi: {err}")
     finally:
+        if test_cursor:
+            test_cursor.close() # Uzavření kurzoru poskytnutého testům
         if conn and conn.is_connected():
-            cursor = conn.cursor()
-
-            cursor.execute("DROP TABLE IF EXISTS ukoly") # Úklid po testech
-            conn.commit()
-            cursor.close()
+            cleanup_cursor = conn.cursor() # Nový kurzor pro úklid
+            try:
+                cleanup_cursor.execute(f"USE {config.TEST_DB_NAME}")
+                cleanup_cursor.execute(f"DROP TABLE IF EXISTS {config.TEST_TABLE_TASKS}")
+                conn.commit()
+            except mysql.connector.Error as e:
+                print(f"Chyba během úklidu testovací databáze: {e}")
+            finally:
+                if cleanup_cursor:
+                    cleanup_cursor.close()
             conn.close()
 
 
@@ -61,37 +74,32 @@ def test_pridat_positive(db_conn):
     Testuje funkci pridat_ukol() pro úspěšné přidání úkolu.
     Očekává, že úkol bude úspěšně přidán do databáze.
     """
-    cursor = None
-    try:
-        # Definice testovacích dat
-        nazev_ukolu = 'Testovací úkol 1'
-        popis_ukolu = 'Popis testovacího úkolu 1'
-        ocekavany_stav = 'Nezahájeno' # Předpokládaný výchozí stav úkolu
+    conn, cursor = db_conn # Rozbalení připojení a kurzoru z fixture
+    # Definice testovacích dat
+    nazev_ukolu = 'Testovací úkol 1'
+    popis_ukolu = 'Popis testovacího úkolu 1'
+    ocekavany_stav = config.STAV_NEZAHAJENO # Předpokládaný výchozí stav úkolu
 
-        # Zavolání testované funkce pro přidání úkolu
-        task_id = pridat_ukol(db_conn, nazev_ukolu, popis_ukolu)
+    # Zavolání testované funkce pro přidání úkolu
+    task_id = pridat_ukol(conn, nazev_ukolu, popis_ukolu)
 
-        # Ověření, že úkol byl úspěšně přidán
-        assert task_id is not None and isinstance(
-            task_id, int
-        ), "Funkce pridat_ukol nevrátila platné ID."
+    # Ověření, že úkol byl úspěšně přidán
+    assert task_id is not None and isinstance(
+        task_id, int
+    ), "Funkce pridat_ukol nevrátila platné ID."
 
-        cursor = db_conn.cursor()
-        cursor.execute(
-            "SELECT name, description, status FROM ukoly WHERE id = %s", (
-                task_id,
-            )
+    cursor.execute(
+        f"SELECT název, popis, stav FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (
+            task_id,
         )
-        result = cursor.fetchone()
-        assert result is not None, "Úkol nebyl přidán do databáze."
-        assert result[0] == nazev_ukolu, "Název úkolu v databázi nesouhlasí."
-        assert result[1] == popis_ukolu, "Popis úkolu v databázi nesouhlasí."
-        assert result[2] == ocekavany_stav, (
-            "Stav úkolu v databázi nesouhlasí."
-        )
-    finally:
-        if cursor:
-            cursor.close()
+    )
+    result = cursor.fetchone()
+    assert result is not None, "Úkol nebyl přidán do databáze."
+    assert result[0] == nazev_ukolu, "Název úkolu v databázi nesouhlasí."
+    assert result[1] == popis_ukolu, "Popis úkolu v databázi nesouhlasí."
+    assert result[2] == ocekavany_stav, (
+        "Stav úkolu v databázi nesouhlasí."
+    )
 
 
 def test_pridat_negative(db_conn):
@@ -100,28 +108,23 @@ def test_pridat_negative(db_conn):
     Očekává, že úkol nebude úspěšně přidán do databáze
     (např. kvůli prázdnému názvu).
     """
-    cursor = None
-    try:
-        # Pokus o přidání úkolu s prázdným názvem
-        id_ukolu = pridat_ukol(db_conn, '', 'Popis nevalidního úkolu')
+    conn, cursor = db_conn
+    # Pokus o přidání úkolu s prázdným názvem
+    id_ukolu = pridat_ukol(conn, '', 'Popis nevalidního úkolu')
 
-        # Ověření, že funkce vrátila None
-        assert id_ukolu is None, (
-            "Funkce pridat_ukol vrátila ID pro nevalidní úkol."
-        )
+    # Ověření, že funkce vrátila None
+    assert id_ukolu is None, (
+        "Funkce pridat_ukol vrátila ID pro nevalidní úkol."
+    )
 
-        # Ověření, že úkol nebyl přidán do databáze
-        cursor = db_conn.cursor()
-        cursor.execute(
-            "SELECT * FROM ukoly WHERE description = 'Popis nevalidního úkolu'"
-        )
-        result = cursor.fetchone()
-        assert result is None, (
-            "Úkol s prázdným názvem byl přidán do databáze, i když neměl."
-        )
-    finally:
-        if cursor:
-            cursor.close()
+    # Ověření, že úkol nebyl přidán do databáze
+    cursor.execute(
+        f"SELECT * FROM {config.TEST_TABLE_TASKS} WHERE popis = 'Popis nevalidního úkolu'"
+    )
+    result = cursor.fetchone()
+    assert result is None, (
+        "Úkol s prázdným názvem byl přidán do databáze, i když neměl."
+    )
 
 
 def test_aktualizovat_positive(db_conn):
@@ -129,33 +132,27 @@ def test_aktualizovat_positive(db_conn):
     Testuje funkci aktualizovat_ukol() pro úspěšnou aktualizaci úkolu.
     Očekává, že úkol bude úspěšně aktualizován v databázi.
     """
-    cursor = None
-    try:
-        # Přidání úkolu pro test aktualizace
-        id_ukolu = pridat_ukol(db_conn, 'Úkol k aktualizaci', 'Původní popis')
-        assert id_ukolu is not None, (
-            "Nepodařilo se přidat úkol pro test aktualizace."
-        )
-        novy_stav = 'Hotovo'
+    conn, cursor = db_conn
+    # Přidání úkolu pro test aktualizace
+    id_ukolu = pridat_ukol(conn, 'Úkol k aktualizaci', 'Původní popis')
+    assert id_ukolu is not None, (
+        "Nepodařilo se přidat úkol pro test aktualizace."
+    )
+    novy_stav = config.STAV_HOTOVO
 
-        # Zavolání testované funkce pro aktualizaci úkolu
-        uspech_aktualizace = aktualizovat_ukol(db_conn, id_ukolu, novy_stav)
+    # Zavolání testované funkce pro aktualizaci úkolu
+    uspech_aktualizace = aktualizovat_ukol(conn, id_ukolu, novy_stav)
 
-        # Ověření, že úkol byl úspěšně aktualizován a správně nastaven
-        assert uspech_aktualizace, "Funkce aktualizovat_ukol nevrátila úspěch."
-
-        cursor = db_conn.cursor()
-        cursor.execute("SELECT status FROM ukoly WHERE id = %s", (id_ukolu,))
-        result = cursor.fetchone()
-        assert result is not None, (
-            "Aktualizovaný úkol nebyl nalezen v databázi."
-        )
-        assert result[0] == novy_stav, (
-            f"Úkol nebyl správně aktualizován na status '{novy_stav}'."
-        )
-    finally:
-        if cursor:
-            cursor.close()
+    # Ověření, že úkol byl úspěšně aktualizován a správně nastaven
+    assert uspech_aktualizace, "Funkce aktualizovat_ukol nevrátila úspěch."
+    cursor.execute(f"SELECT stav FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (id_ukolu,))
+    result = cursor.fetchone()
+    assert result is not None, (
+        "Aktualizovaný úkol nebyl nalezen v databázi."
+    )
+    assert result[0] == novy_stav, (
+        f"Úkol nebyl správně aktualizován na status '{novy_stav}'."
+    )
 
 
 def test_aktualizovat_negative(db_conn):
@@ -164,11 +161,12 @@ def test_aktualizovat_negative(db_conn):
     Očekává, že úkol nebude úspěšně aktualizován v databázi
     (např. neexistující ID).
     """
+    conn, _ = db_conn # Kurzor zde není potřeba, ale musíme ho rozbalit
     # Definice neexistujícího ID úkolu
     neexistujici_id_ukolu = 99999  # Předpokládáme, že toto ID neexistuje
     # Pokus o aktualizaci úkolu s neexistujícím ID
     uspech_aktualizace = aktualizovat_ukol(
-        db_conn, neexistujici_id_ukolu, 'Hotovo'
+        conn, neexistujici_id_ukolu, config.STAV_HOTOVO
     )
 
     # Ověření, že funkce vrátila False
@@ -182,28 +180,23 @@ def test_odstranit_positive(db_conn):
     Testuje funkci odstranit_ukol() pro úspěšné odstranění úkolu.
     Očekává, že úkol bude úspěšně odstraněn z databáze.
     """
-    cursor = None
-    try:
-        # Přidání úkolu pro test odstranění
-        id_ukolu = pridat_ukol(
-            db_conn, 'Úkol k odstranění', 'Popis úkolu k odstranění'
-        )
+    conn, cursor = db_conn
+    # Přidání úkolu pro test odstranění
+    id_ukolu = pridat_ukol(
+        conn, 'Úkol k odstranění', 'Popis úkolu k odstranění'
+    )
 
-        # Ověření, že úkol byl úspěšně odstraněn
-        assert id_ukolu is not None, (
-            "Nepodařilo se přidat úkol pro test odstranění."
-        )
+    # Ověření, že úkol byl úspěšně odstraněn
+    assert id_ukolu is not None, (
+        "Nepodařilo se přidat úkol pro test odstranění."
+    )
 
-        uspech_odstraneni = odstranit_ukol(db_conn, id_ukolu)
-        assert uspech_odstraneni, "Funkce odstranit_ukol nevrátila úspěch."
+    uspech_odstraneni = odstranit_ukol(conn, id_ukolu)
+    assert uspech_odstraneni, "Funkce odstranit_ukol nevrátila úspěch."
 
-        cursor = db_conn.cursor()
-        cursor.execute("SELECT * FROM ukoly WHERE id = %s", (id_ukolu,))
-        result = cursor.fetchone()
-        assert result is None, "Úkol nebyl správně odstraněn z databáze."
-    finally:
-        if cursor:
-            cursor.close()
+    cursor.execute(f"SELECT * FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (id_ukolu,))
+    result = cursor.fetchone()
+    assert result is None, "Úkol nebyl správně odstraněn z databáze."
 
 
 def test_odstranit_negative(db_conn):
@@ -212,10 +205,11 @@ def test_odstranit_negative(db_conn):
     Očekává, že úkol nebude úspěšně odstraněn z databáze
     (např. neexistující ID).
     """
+    conn, _ = db_conn # Kurzor zde není potřeba
     # Definice neexistujícího ID úkolu
     neexistujici_id_ukolu = 99999  # Předpokládáme, že toto ID neexistuje
     # Pokus o odstranění úkolu s neexistujícím ID
-    uspech_odstraneni = odstranit_ukol(db_conn, neexistujici_id_ukolu)
+    uspech_odstraneni = odstranit_ukol(conn, neexistujici_id_ukolu)
     # Ověření, že funkce vrátila False
     assert not uspech_odstraneni, (
         "Funkce odstranit_ukol vrátila úspěch pro neexistující ID."

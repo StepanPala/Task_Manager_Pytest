@@ -22,7 +22,7 @@ Knihovny lze nainstalovat následovně:
 ### Hlavní aplikace (`src/main.py`)
 
 Program se spouští přímo. Po spuštění se připojí k MySQL databázi (vytvoří ji spolu s potřebnou tabulkou `ukoly`, pokud neexistují) a nabídne interaktivní menu pro správu úkolů.
-Ujistěte se, že máte spuštěný MySQL server a zadané správné přihlašovací údaje v `src/main.py` (v základu `user="root"`, `password="1111"`, podle potřeby upravte).
+Ujistěte se, že máte spuštěný MySQL server a zadané správné přihlašovací údaje v `src/config.py` (v základu `user="root"`, `password="1111"`, podle potřeby upravte).
 
 **Spuštění:**
 `python src/main.py`
@@ -105,7 +105,7 @@ The dependencies can be installed as follows:
 ### Main (`src/main.py`)
 
 The program is run directly. When it starts, it connects to the MySQL database (creating it along with the necessary table of `ukoly` (tasks) if they do not exist) and offers an interactive menu for task management.
-Make sure you have the MySQL server running and the correct login credentials in `src/main.py` (default `user="root"`, `password="1111"`, modify as needed).
+Make sure you have the MySQL server running and the correct login credentials in `src/config.py` (default `user="root"`, `password="1111"`, modify as needed).
 
 **Execution:**
 `python src/main.py`
