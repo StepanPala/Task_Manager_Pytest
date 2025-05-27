@@ -50,7 +50,10 @@ def vytvoreni_databaze() -> bool:
 
         return True
     except mysql.connector.Error as err:
-        print(f"Chyba při vytváření/ověřování databáze '{config.DB_NAME_APP}': {err}")
+        print(
+            f"Chyba při vytváření/ověřování databáze "
+            f"'{config.DB_NAME_APP}': {err}"
+        )
         return False
 
 
@@ -96,7 +99,8 @@ def vytvoreni_tabulky():
         else:
             # Tabulka neexistuje, vytvoření nové tabulky
             status_enum_hodnoty = (
-                f"'{config.STAV_NEZAHAJENO}', '{config.STAV_PROBIHA}', '{config.STAV_HOTOVO}'"
+                f"'{config.STAV_NEZAHAJENO}', '{config.STAV_PROBIHA}', "
+                f"'{config.STAV_HOTOVO}'"
             )
 
             print("Tabulka neexistuje, vytvářím ji...")
@@ -163,7 +167,9 @@ def pridat_ukol(db_conn, nazev_ukolu: str, popis_ukolu: str):
 
         # Nejprve kontroluje, zda úkol s tímto názvem již neexistuje
         cursor.execute(
-            f"SELECT id FROM {config.TABLE_TASKS} WHERE název = %s", (nazev_ukolu_trimmed,)
+            f"SELECT id FROM {config.TABLE_TASKS} "
+            "WHERE název = %s", 
+            (nazev_ukolu_trimmed,)
         )
         if cursor.fetchone():
             print(
@@ -262,7 +268,9 @@ def ziskej_ukoly_pro_vyber(db_conn) -> list[dict]:
     cursor = None
     try:
         cursor = db_conn.cursor(dictionary=True)
-        cursor.execute(f"SELECT id, název, stav FROM {config.TABLE_TASKS} ORDER BY id")
+        cursor.execute(
+            f"SELECT id, název, stav FROM {config.TABLE_TASKS} ORDER BY id"
+        )
         ukoly = cursor.fetchall()
         return ukoly
     except mysql.connector.Error as err:

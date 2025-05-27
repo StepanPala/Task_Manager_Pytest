@@ -25,7 +25,7 @@ Program se spouští přímo. Po spuštění se připojí k MySQL databázi (vyt
 Ujistěte se, že máte spuštěný MySQL server a zadané správné přihlašovací údaje v `src/config.py` (v základu `user="root"`, `password="1111"`, podle potřeby upravte).
 
 **Spuštění:**
-`python src/main.py`
+`python -m src.main`
 
 ### Testy (`test/test_task_manager.py`)
 
@@ -108,7 +108,7 @@ The program is run directly. When it starts, it connects to the MySQL database (
 Make sure you have the MySQL server running and the correct login credentials in `src/config.py` (default `user="root"`, `password="1111"`, modify as needed).
 
 **Execution:**
-`python src/main.py`
+`python -m src.main`
 
 ### Tests (`test/test_task_manager.py`)
 

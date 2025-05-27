@@ -28,12 +28,15 @@ def db_conn():
     try:
         conn = mysql.connector.connect(**db_conn_data)
         setup_cursor = conn.cursor() # Kurzor pro nastavení
-        setup_cursor.execute(f"CREATE DATABASE IF NOT EXISTS {config.TEST_DB_NAME}")
+        setup_cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS {config.TEST_DB_NAME}"
+        )
         setup_cursor.execute(f"USE {config.TEST_DB_NAME}") # Výběr databáze
         setup_cursor.execute(f"DROP TABLE IF EXISTS {config.TEST_TABLE_TASKS}")
         # Použití konstant pro stavy v ENUM definici
         status_enum_values = (
-            f"'{config.STAV_NEZAHAJENO}', '{config.STAV_HOTOVO}', '{config.STAV_PROBIHA}'"
+            f"'{config.STAV_NEZAHAJENO}', '{config.STAV_HOTOVO}', "
+            f"'{config.STAV_PROBIHA}'"
         )
         setup_cursor.execute(f"""
             CREATE TABLE {config.TEST_TABLE_TASKS} (
@@ -59,7 +62,9 @@ def db_conn():
             cleanup_cursor = conn.cursor() # Nový kurzor pro úklid
             try:
                 cleanup_cursor.execute(f"USE {config.TEST_DB_NAME}")
-                cleanup_cursor.execute(f"DROP TABLE IF EXISTS {config.TEST_TABLE_TASKS}")
+                cleanup_cursor.execute(
+                    f"DROP TABLE IF EXISTS {config.TEST_TABLE_TASKS}"
+                )
                 conn.commit()
             except mysql.connector.Error as e:
                 print(f"Chyba během úklidu testovací databáze: {e}")
@@ -89,9 +94,8 @@ def test_pridat_positive(db_conn):
     ), "Funkce pridat_ukol nevrátila platné ID."
 
     cursor.execute(
-        f"SELECT název, popis, stav FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (
-            task_id,
-        )
+        f"SELECT název, popis, stav FROM {config.TEST_TABLE_TASKS} "
+        f"WHERE id = %s", (task_id,)
     )
     result = cursor.fetchone()
     assert result is not None, "Úkol nebyl přidán do databáze."
@@ -119,7 +123,8 @@ def test_pridat_negative(db_conn):
 
     # Ověření, že úkol nebyl přidán do databáze
     cursor.execute(
-        f"SELECT * FROM {config.TEST_TABLE_TASKS} WHERE popis = 'Popis nevalidního úkolu'"
+        f"SELECT * FROM {config.TEST_TABLE_TASKS} "
+        f"WHERE popis = 'Popis nevalidního úkolu'"
     )
     result = cursor.fetchone()
     assert result is None, (
@@ -145,7 +150,10 @@ def test_aktualizovat_positive(db_conn):
 
     # Ověření, že úkol byl úspěšně aktualizován a správně nastaven
     assert uspech_aktualizace, "Funkce aktualizovat_ukol nevrátila úspěch."
-    cursor.execute(f"SELECT stav FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (id_ukolu,))
+    cursor.execute(
+        f"SELECT stav FROM {config.TEST_TABLE_TASKS} "
+        f"WHERE id = %s", (id_ukolu,)
+    )
     result = cursor.fetchone()
     assert result is not None, (
         "Aktualizovaný úkol nebyl nalezen v databázi."
@@ -194,7 +202,9 @@ def test_odstranit_positive(db_conn):
     uspech_odstraneni = odstranit_ukol(conn, id_ukolu)
     assert uspech_odstraneni, "Funkce odstranit_ukol nevrátila úspěch."
 
-    cursor.execute(f"SELECT * FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (id_ukolu,))
+    cursor.execute(
+        f"SELECT * FROM {config.TEST_TABLE_TASKS} WHERE id = %s", (id_ukolu,)
+    )
     result = cursor.fetchone()
     assert result is None, "Úkol nebyl správně odstraněn z databáze."
 
